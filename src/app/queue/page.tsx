@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import type {
+  ClassifyResponse,
   MessageCategory,
   MessagePriority,
   MessageStatus,
@@ -66,6 +67,10 @@ export default function QueuePage() {
   const [filter, setFilter] = useState<MessageCategory | 'all'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editedReply, setEditedReply] = useState('')
+  const [company, setCompany] = useState('')
+  const [message, setMessage] = useState('')
+  const [formError, setFormError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   function handleAction(id: string, status: MessageStatus) {
     setItems((currentItems) =>
@@ -92,6 +97,54 @@ export default function QueuePage() {
     setEditingId(null)
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const trimmedCompany = company.trim()
+    const trimmedMessage = message.trim()
+
+    if (!trimmedCompany || !trimmedMessage) {
+      setFormError('Uzupełnij nazwę firmy i treść wiadomości.')
+      return
+    }
+
+    setIsSubmitting(true)
+    setFormError('')
+
+    try {
+      const response = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: trimmedCompany, message: trimmedMessage }),
+      })
+      const data = (await response.json()) as ClassifyResponse | { error?: string }
+
+      if (!response.ok) {
+        setFormError('error' in data && data.error ? data.error : 'Nie udało się sklasyfikować wiadomości.')
+        return
+      }
+
+      const classification = data as ClassifyResponse
+      const newItem: QueueItem = {
+        ...classification,
+        id: crypto.randomUUID(),
+        company: trimmedCompany,
+        message: trimmedMessage,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      }
+
+      setItems((currentItems) => [newItem, ...currentItems])
+      setCompany('')
+      setMessage('')
+      setFilter('all')
+    } catch {
+      setFormError('Nie udało się połączyć z serwerem. Spróbuj ponownie.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const visible = filter === 'all' ? items : items.filter((item) => item.category === filter)
   const pending = items.filter((item) => item.status === 'pending').length
 
@@ -104,6 +157,53 @@ export default function QueuePage() {
           {pending} oczekujących · {items.length} łącznie
         </p>
       </div>
+
+      <form
+        onSubmit={handleSubmit}
+        className="mb-8 rounded-xl border p-5"
+        style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
+      >
+        <h2 className="text-sm font-semibold text-zinc-100">Dodaj wiadomość do klasyfikacji</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          AI przygotuje kategorię, priorytet i draft odpowiedzi do weryfikacji.
+        </p>
+
+        <div className="mt-4 grid gap-3">
+          <label className="grid gap-1 text-xs text-zinc-400">
+            Firma
+            <input
+              value={company}
+              onChange={(event) => setCompany(event.target.value)}
+              placeholder="np. Sklep meblowy Premium"
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-zinc-500"
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-400">
+            Wiadomość klienta
+            <textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Wpisz treść wiadomości..."
+              rows={3}
+              className="resize-y rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-zinc-500"
+            />
+          </label>
+        </div>
+
+        {formError && (
+          <p role="alert" className="mt-3 text-sm text-red-400">
+            {formError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="mt-4 rounded-lg border border-blue-700/40 bg-blue-900/40 px-4 py-2 text-xs font-medium text-blue-300 transition-colors hover:bg-blue-800/50 disabled:cursor-wait disabled:opacity-50"
+        >
+          {isSubmitting ? 'Klasyfikowanie...' : 'Klasyfikuj i dodaj'}
+        </button>
+      </form>
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {CATEGORIES.map((category) => (

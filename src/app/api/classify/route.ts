@@ -9,6 +9,7 @@ import type {
 
 const DEFAULT_MODEL = 'gemini-3.5-flash'
 const MAX_TOKENS = 300
+const REQUEST_TIMEOUT_MS = 45_000
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
 
 const CATEGORIES = ['zamówienie', 'pytanie', 'reklamacja', 'spam'] as const
@@ -36,7 +37,9 @@ function parseClassification(content: string): ClassifyResponse | null {
   }
 
   const result = parsed as Record<string, unknown>
-  const draftReply = typeof result.draft_reply === 'string' ? result.draft_reply.trim() : ''
+  const rawDraftReply = typeof result.draft_reply === 'string' ? result.draft_reply.trim() : ''
+  const draftReply =
+    rawDraftReply || (result.category === 'spam' ? 'Brak odpowiedzi - wiadomość oznaczona jako spam.' : '')
 
   if (
     !isCategory(result.category) ||
@@ -87,17 +90,26 @@ export async function POST(req: Request): Promise<NextResponse<ClassifyResponse 
   const client = new OpenAI({
     apiKey,
     baseURL: GEMINI_BASE_URL,
+    maxRetries: 1,
+    timeout: REQUEST_TIMEOUT_MS,
   })
 
   try {
-    const completion = await client.chat.completions.create({
+    const completionRequest = {
       model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
       max_tokens: MAX_TOKENS,
       temperature: 0.2,
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_object' as const },
+      extra_body: {
+        google: {
+          thinking_config: {
+            thinking_level: 'minimal',
+          },
+        },
+      },
       messages: [
         {
-          role: 'system',
+          role: 'system' as const,
           content: [
             'Jesteś asystentem obsługi klienta polskich firm.',
             'Klasyfikuj wiadomości klientów i przygotowuj gotowy szkic odpowiedzi po polsku.',
@@ -107,14 +119,18 @@ export async function POST(req: Request): Promise<NextResponse<ClassifyResponse 
             'priority: jedno z "high", "medium", "low".',
             'confidence: liczba od 0 do 1.',
             'draft_reply: krótka, pomocna odpowiedź dopasowana tonem do firmy i kategorii.',
+            'Dla kategorii spam ustaw draft_reply na "Brak odpowiedzi - wiadomość oznaczona jako spam.".',
+            'Nie wymyślaj faktów, których nie ma w wiadomości, takich jak godziny otwarcia, rabaty lub status wysyłki.',
+            'Jeśli brakuje danych potrzebnych do odpowiedzi, poproś klienta o uzupełnienie informacji.',
           ].join(' '),
         },
         {
-          role: 'user',
+          role: 'user' as const,
           content: `Firma: ${company}\nWiadomość klienta: ${message}`,
         },
       ],
-    })
+    }
+    const completion = await client.chat.completions.create(completionRequest)
 
     const content = completion.choices[0]?.message.content
     const classification = content ? parseClassification(content) : null
