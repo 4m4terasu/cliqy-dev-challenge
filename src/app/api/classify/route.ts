@@ -7,7 +7,8 @@ import type {
   MessagePriority,
 } from '@/types'
 
-const DEFAULT_MODEL = 'gemini-3.5-flash'
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
 const MAX_TOKENS = 300
 const REQUEST_TIMEOUT_MS = 45_000
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
@@ -81,32 +82,44 @@ export async function POST(req: Request): Promise<NextResponse<ClassifyResponse 
     return NextResponse.json({ error: 'Nazwa firmy jest wymagana.' }, { status: 400 })
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
+  const geminiApiKey = process.env.GEMINI_API_KEY
+  const openaiApiKey = process.env.OPENAI_API_KEY
+  const useGemini = Boolean(geminiApiKey)
+  const apiKey = geminiApiKey || openaiApiKey
 
   if (!apiKey) {
-    return NextResponse.json({ error: 'Brak konfiguracji klucza Gemini API.' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Skonfiguruj GEMINI_API_KEY lub OPENAI_API_KEY.' },
+      { status: 500 },
+    )
   }
 
   const client = new OpenAI({
     apiKey,
-    baseURL: GEMINI_BASE_URL,
+    ...(useGemini ? { baseURL: GEMINI_BASE_URL } : {}),
     maxRetries: 1,
     timeout: REQUEST_TIMEOUT_MS,
   })
 
   try {
     const completionRequest = {
-      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      model: useGemini
+        ? process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL
+        : process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
       max_tokens: MAX_TOKENS,
       temperature: 0.2,
       response_format: { type: 'json_object' as const },
-      extra_body: {
-        google: {
-          thinking_config: {
-            thinking_level: 'minimal',
-          },
-        },
-      },
+      ...(useGemini
+        ? {
+            extra_body: {
+              google: {
+                thinking_config: {
+                  thinking_level: 'minimal',
+                },
+              },
+            },
+          }
+        : {}),
       messages: [
         {
           role: 'system' as const,

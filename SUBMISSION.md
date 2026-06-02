@@ -2,6 +2,8 @@
 
 Dodałem/am formularz ręcznego dodawania wiadomości. Formularz wywołuje endpoint `/api/classify`, a następnie dodaje wynik do kolejki, dzięki czemu starter pokazuje pełny przepływ: wiadomość klienta -> klasyfikacja AI -> draft odpowiedzi -> decyzja operatora.
 
+Lokalnie użyłem/am Gemini przez endpoint kompatybilny z OpenAI, aby nie zużywać płatnych kredytów OpenAI w zadaniu rekrutacyjnym. Implementacja obsługuje także `OPENAI_API_KEY` i model `gpt-4o-mini`, zgodnie z oryginalną instrukcją zadania.
+
 ## AI - jak używałem/am narzędzi
 
 - Narzędzia: Codex i ChatGPT do planowania, wskazówek implementacyjnych, debugowania i przeglądu rozwiązania.
